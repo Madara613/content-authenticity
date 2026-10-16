@@ -73,23 +73,43 @@ cp .env.example .env
 # Open .env and insert your free Gemini API key and Supabase credentials
 ```
 
-### 2. Backend Setup
+### 2. Backend Setup & Run Guide (Phase 1)
 
-```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-pip install -r requirements.txt
-```
+2. **Start the FastAPI Development Server**:
+   ```bash
+   python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+   The interactive Swagger documentation will be available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+3. **Run Unit & API Tests**:
+   ```bash
+   python -m pytest -v
+   ```
+
+4. **Example API Usage**:
+   - **Health Check**:
+     ```bash
+     curl http://localhost:8000/health
+     ```
+   - **Analyze Image & Caption**:
+     ```bash
+     curl -X POST http://localhost:8000/analyze \
+       -F "image=@sample.jpg" \
+       -F "caption=Breaking news event reported downtown."
+     ```
+   - **Access Generated ELA Heatmaps**:
+     Heatmap images are saved in `data/heatmaps/` and can be inspected directly or retrieved via `http://localhost:8000/heatmaps/<filename>`.
 
 ---
 
 ## 🗺️ Build Phases
 
-- [ ] **Phase 1**: Backend skeleton + Metadata + Error Level Analysis (ELA) + Noise Forensics
+- [x] **Phase 1**: Backend foundation + Metadata (EXIF & C2PA) + Error Level Analysis (ELA) with Heatmap
 - [ ] **Phase 2**: Pretrained AI-image detector + CLIP cross-modal alignment
 - [ ] **Phase 3**: Gemini text claim extraction + Google Search grounding + LIAR FAISS + NLI
 - [ ] **Phase 4**: Fusion Engine (rules, conflict thresholds, unverifiable fallback) + Supabase logging

@@ -1,0 +1,1 @@
+"""Content Authenticity Verification Backend."""
