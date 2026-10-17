@@ -13,8 +13,12 @@ class Settings(BaseSettings):
     allowed_extensions: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".webp")
     allowed_mime_types: tuple[str, ...] = ("image/jpeg", "image/png", "image/webp")
     
-    # Heatmap storage path
+    # Storage paths
     heatmap_dir: Path = Path("data/heatmaps")
+
+    # Phase 2 Hugging Face Models
+    ai_detector_model_id: str = "umm-maybe/AI-image-detector"
+    clip_model_id: str = "openai/clip-vit-base-patch32"
 
     model_config = SettingsConfigDict(
         env_file=".env",

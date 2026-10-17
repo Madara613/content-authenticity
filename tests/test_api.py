@@ -1,17 +1,43 @@
 import io
+from unittest.mock import patch
 import pytest
+
 from tests.conftest import make_jpeg_bytes, make_png_bytes, make_webp_bytes
+from backend.schemas import SignalResult
+
+
+@pytest.fixture(autouse=True)
+def mock_phase2_models():
+    """Mock Phase 2 AI and CLIP models in API tests so they run fast and offline."""
+    mock_ai_signal = SignalResult(
+        name="ai_detector",
+        score=0.10,
+        confidence=0.88,
+        explanation="Mocked AI detector signal.",
+        details={"synthetic_prob": 0.10, "authentic_prob": 0.90},
+    )
+    mock_clip_signal = SignalResult(
+        name="clip_consistency",
+        score=0.15,
+        confidence=0.85,
+        explanation="Mocked CLIP consistency signal.",
+        details={"cosine_similarity": 0.29},
+    )
+
+    with patch("backend.main.analyze_ai_generation", return_value=mock_ai_signal), \
+         patch("backend.main.analyze_clip_consistency", return_value=mock_clip_signal):
+        yield
 
 
 def test_health_endpoint(client):
-    """GET /health returns healthy status and Phase 1 modules."""
+    """GET /health returns healthy status and Phase 1 & 2 modules."""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
     assert data["version"] == "1.0.0"
-    assert "metadata" in data["modules_loaded"]
-    assert "ela" in data["modules_loaded"]
+    for expected_mod in ["metadata", "ela", "ai_detector", "clip_consistency"]:
+        assert expected_mod in data["modules_loaded"]
 
 
 def test_api_health_endpoint_alias(client):
@@ -22,7 +48,7 @@ def test_api_health_endpoint_alias(client):
 
 
 def test_analyze_with_jpeg(client):
-    """POST /analyze with JPEG and caption returns signals."""
+    """POST /analyze with JPEG and caption returns all 4 signals."""
     jpeg_bytes = make_jpeg_bytes()
     response = client.post(
         "/analyze",
@@ -36,12 +62,12 @@ def test_analyze_with_jpeg(client):
     assert data["caption"] == "Protest in downtown Seattle on Sunday morning."
     assert "signals" in data
     assert isinstance(data["signals"], list)
-    assert len(data["signals"]) == 2
+    assert len(data["signals"]) == 4
 
     # Check signal modules
     signal_names = [s["name"] for s in data["signals"]]
-    assert "metadata" in signal_names
-    assert "ela" in signal_names
+    for expected_name in ["metadata", "ela", "ai_detector", "clip_consistency"]:
+        assert expected_name in signal_names
 
     # Check contract fields for each signal
     for s in data["signals"]:
@@ -63,7 +89,7 @@ def test_analyze_with_png(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["signals"]) == 2
+    assert len(data["signals"]) == 4
 
 
 def test_analyze_with_webp(client):
@@ -76,12 +102,11 @@ def test_analyze_with_webp(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["signals"]) == 2
+    assert len(data["signals"]) == 4
 
 
 def test_analyze_disallowed_extension(client):
     """POST /analyze rejects disallowed extensions like .gif."""
-    # Dummy GIF header
     gif_bytes = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
     response = client.post(
         "/analyze",
@@ -128,7 +153,6 @@ def test_analyze_empty_file(client):
 
 def test_analyze_exceeds_max_size(client):
     """POST /analyze rejects uploads exceeding 10 MB."""
-    # 10.5 MB payload with JPEG magic header so it looks like a large file
     oversized_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * (10 * 1024 * 1024 + 500 * 1024)
     response = client.post(
         "/analyze",

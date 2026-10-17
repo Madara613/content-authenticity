@@ -9,13 +9,15 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from backend.config import settings
+from backend.modules.ai_detector import analyze_ai_generation
+from backend.modules.clip_consistency import analyze_clip_consistency
 from backend.modules.ela import analyze_ela
 from backend.modules.metadata import analyze_metadata
 from backend.schemas import AnalyzeResponse, HealthResponse, SignalResult
 
 app = FastAPI(
     title="Multimodal Content Authenticity API",
-    description="Backend API for verifying image and claim authenticity (Phase 1).",
+    description="Backend API for verifying image and claim authenticity (Phase 1 & Phase 2).",
     version="1.0.0",
 )
 
@@ -46,11 +48,11 @@ app.mount(
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 @app.get("/api/health", response_model=HealthResponse, include_in_schema=False)
 async def health_check() -> HealthResponse:
-    """Return system readiness probe and loaded Phase 1 modules."""
+    """Return system readiness probe and loaded Phase 1 & 2 modules."""
     return HealthResponse(
         status="healthy",
         version="1.0.0",
-        modules_loaded=["metadata", "ela"],
+        modules_loaded=["metadata", "ela", "ai_detector", "clip_consistency"],
     )
 
 
@@ -129,7 +131,7 @@ async def analyze_endpoint(
     image: UploadFile = File(..., description="Image file to verify (JPEG, PNG, WEBP, <= 10MB)"),
     caption: str = Form(..., description="Caption or claim text accompanying the image"),
 ) -> AnalyzeResponse:
-    """Analyze image metadata and ELA compression signals."""
+    """Analyze image using metadata, ELA, AI detector, and CLIP cross-modal consistency."""
     image_bytes = await validate_and_read_image(image)
     filename = image.filename or "upload.jpg"
 
@@ -143,7 +145,13 @@ async def analyze_endpoint(
         output_dir=settings.heatmap_dir,
     )
 
-    signals: List[SignalResult] = [metadata_signal, ela_signal]
+    # Module 3: AI-Generated Image Detector (Lazy loaded on CPU)
+    ai_signal: SignalResult = analyze_ai_generation(image_bytes, filename=filename)
+
+    # Module 4: Cross-Modal CLIP Consistency (Lazy loaded on CPU)
+    clip_signal: SignalResult = analyze_clip_consistency(image_bytes, caption=caption)
+
+    signals: List[SignalResult] = [metadata_signal, ela_signal, ai_signal, clip_signal]
 
     return AnalyzeResponse(
         filename=filename,
