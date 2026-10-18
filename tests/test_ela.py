@@ -2,7 +2,12 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from tests.conftest import make_jpeg_bytes, make_spliced_jpeg_bytes
+from tests.conftest import (
+    make_jpeg_bytes,
+    make_png_bytes,
+    make_spliced_jpeg_bytes,
+    make_webp_bytes,
+)
 from backend.modules.ela import analyze_ela
 from backend.schemas import SignalResult
 
@@ -81,4 +86,39 @@ def test_ela_spliced_score_higher_than_uniform(tmp_path):
 
     assert res_spliced.score > res_uniform.score
     assert res_spliced.details["high_discrepancy_clusters"] > res_uniform.details["high_discrepancy_clusters"]
+
+
+def test_ela_png_lossless_low_confidence(tmp_path):
+    """PNG is lossless, so ELA should lower confidence to ~0.15 and warn in explanation."""
+    png_bytes = make_png_bytes(width=150, height=150)
+    result = analyze_ela(png_bytes, filename="graphic.png", output_dir=tmp_path)
+
+    assert result.name == "ela"
+    assert result.confidence == 0.15
+    assert "unreliable for lossless images" in result.explanation.lower()
+    assert result.details["is_jpeg"] is False
+    assert result.details["image_format"] == "PNG"
+
+
+def test_ela_webp_lossless_low_confidence(tmp_path):
+    """WEBP non-JPEG image should lower confidence to ~0.15 and warn in explanation."""
+    webp_bytes = make_webp_bytes(width=150, height=150)
+    result = analyze_ela(webp_bytes, filename="photo.webp", output_dir=tmp_path)
+
+    assert result.name == "ela"
+    assert result.confidence == 0.15
+    assert "unreliable for lossless images" in result.explanation.lower()
+    assert result.details["is_jpeg"] is False
+
+
+def test_ela_jpeg_behavior_unchanged(tmp_path):
+    """JPEG image retains standard high confidence and does not warn about lossless format."""
+    jpeg_bytes = make_jpeg_bytes(width=150, height=150)
+    result = analyze_ela(jpeg_bytes, filename="photo.jpg", output_dir=tmp_path)
+
+    assert result.name == "ela"
+    assert result.confidence >= 0.70
+    assert "unreliable for lossless images" not in result.explanation.lower()
+    assert result.details["is_jpeg"] is True
+    assert result.details["image_format"] == "JPEG"
 

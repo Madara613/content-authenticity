@@ -13,6 +13,7 @@ Model Selection:
 
 import io
 import logging
+import os
 from typing import Any, Dict, Optional, Tuple
 from PIL import Image
 import torch
@@ -23,17 +24,29 @@ from backend.schemas import SignalResult
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_AI_DETECTOR_MODEL = "umm-maybe/AI-image-detector"
+
 # Cached model instances for lazy loading
 _ai_model: Optional[Any] = None
 _ai_processor: Optional[Any] = None
 _ai_cached_model_id: Optional[str] = None
 
 
+def _resolve_model_id(model_id: Optional[str] = None) -> str:
+    """Resolve model ID from parameter, AI_DETECTOR_MODEL env var, settings, or default."""
+    if model_id:
+        return model_id
+    env_model = os.getenv("AI_DETECTOR_MODEL")
+    if env_model and env_model.strip():
+        return env_model.strip()
+    return getattr(settings, "ai_detector_model_id", DEFAULT_AI_DETECTOR_MODEL) or DEFAULT_AI_DETECTOR_MODEL
+
+
 def get_ai_detector_components(model_id: Optional[str] = None) -> Tuple[Any, Any]:
     """Lazily load and cache the Hugging Face AI detector model on CPU."""
     global _ai_model, _ai_processor, _ai_cached_model_id
 
-    target_model_id = model_id or settings.ai_detector_model_id
+    target_model_id = _resolve_model_id(model_id)
 
     if _ai_model is not None and _ai_processor is not None and _ai_cached_model_id == target_model_id:
         return _ai_model, _ai_processor
@@ -71,7 +84,7 @@ def analyze_ai_generation(
         - confidence: Reliability metric (0.0 if model fails to load)
         - explanation: Clear human-readable finding
     """
-    target_model_id = model_id or settings.ai_detector_model_id
+    target_model_id = _resolve_model_id(model_id)
 
     # 1. Lazily load model components with fail-safe error handling
     try:

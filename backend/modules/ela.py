@@ -30,6 +30,7 @@ def analyze_ela(
 
     # 1. Open image and convert to RGB
     with Image.open(io.BytesIO(image_bytes)) as orig_img:
+        orig_format = (orig_img.format or "").upper()
         orig_rgb = orig_img.convert("RGB")
         width, height = orig_rgb.size
 
@@ -121,10 +122,22 @@ def analyze_ela(
             f"max error: {max_error:.1f}). No localized discrepancy clusters detected."
         )
 
-    # Small image penalty on confidence
+    # Small image penalty on confidence (for JPEG images)
     if width < 120 or height < 120:
         confidence = max(0.50, confidence - 0.20)
         explanation += " Note: Small image dimensions reduce ELA sensitivity."
+
+    # Lossless / Non-JPEG handling: ELA is only meaningful for lossy formats.
+    # For PNG, WEBP lossless or any image that was not JPEG-compressed,
+    # lower the confidence to about 0.15 and state that ELA is unreliable for lossless images.
+    is_jpeg = orig_format in ("JPEG", "JPG")
+    if not is_jpeg:
+        confidence = 0.15
+        format_label = orig_format or "non-JPEG"
+        explanation += (
+            f" Note: Image format is {format_label}. ELA is only meaningful for lossy formats "
+            f"and is unreliable for lossless images."
+        )
 
     return SignalResult(
         name="ela",
@@ -141,5 +154,7 @@ def analyze_ela(
             "heatmap_filename": heatmap_filename,
             "resave_quality": quality,
             "image_dimensions": [width, height],
+            "image_format": orig_format,
+            "is_jpeg": is_jpeg,
         },
     )

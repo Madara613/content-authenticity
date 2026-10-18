@@ -114,3 +114,45 @@ def test_ai_detector_contract_types_and_bounds():
     assert isinstance(res_dict["explanation"], str)
     assert 0.0 <= res_dict["score"] <= 1.0
     assert 0.0 <= res_dict["confidence"] <= 1.0
+
+
+def test_ai_detector_reads_model_from_env(monkeypatch):
+    """Verify model ID is loaded from AI_DETECTOR_MODEL environment variable."""
+    custom_model_id = "Organism/custom-synthetic-detector"
+    monkeypatch.setenv("AI_DETECTOR_MODEL", custom_model_id)
+
+    mock_model = MagicMock()
+    mock_processor = MagicMock()
+    mock_logits = torch.tensor([[2.0, -1.0]])
+    mock_model.return_value = MagicMock(logits=mock_logits)
+    mock_model.config.id2label = {0: "artificial", 1: "human"}
+
+    with patch("backend.modules.ai_detector.AutoImageProcessor.from_pretrained", return_value=mock_processor) as mock_proc_loader, \
+         patch("backend.modules.ai_detector.AutoModelForImageClassification.from_pretrained", return_value=mock_model) as mock_mod_loader:
+        jpeg_bytes = make_jpeg_bytes()
+        result = analyze_ai_generation(jpeg_bytes)
+
+        assert result.details["model_id"] == custom_model_id
+        mock_proc_loader.assert_called_with(custom_model_id)
+        mock_mod_loader.assert_called_with(custom_model_id)
+
+
+def test_ai_detector_default_model_when_env_not_set(monkeypatch):
+    """Verify default model umm-maybe/AI-image-detector is used when AI_DETECTOR_MODEL is not set."""
+    monkeypatch.delenv("AI_DETECTOR_MODEL", raising=False)
+
+    mock_model = MagicMock()
+    mock_processor = MagicMock()
+    mock_logits = torch.tensor([[2.0, -1.0]])
+    mock_model.return_value = MagicMock(logits=mock_logits)
+    mock_model.config.id2label = {0: "artificial", 1: "human"}
+
+    with patch("backend.modules.ai_detector.AutoImageProcessor.from_pretrained", return_value=mock_processor) as mock_proc_loader, \
+         patch("backend.modules.ai_detector.AutoModelForImageClassification.from_pretrained", return_value=mock_model) as mock_mod_loader:
+        jpeg_bytes = make_jpeg_bytes()
+        result = analyze_ai_generation(jpeg_bytes)
+
+        assert result.details["model_id"] == "umm-maybe/AI-image-detector"
+        mock_proc_loader.assert_called_with("umm-maybe/AI-image-detector")
+        mock_mod_loader.assert_called_with("umm-maybe/AI-image-detector")
+
