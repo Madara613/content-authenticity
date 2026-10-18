@@ -7,8 +7,8 @@ from backend.schemas import SignalResult
 
 
 @pytest.fixture(autouse=True)
-def mock_phase2_models():
-    """Mock Phase 2 AI and CLIP models in API tests so they run fast and offline."""
+def mock_ml_and_genai_models():
+    """Mock Phase 2 and Phase 3 models in API tests so they run fast and offline."""
     mock_ai_signal = SignalResult(
         name="ai_detector",
         score=0.10,
@@ -23,20 +23,29 @@ def mock_phase2_models():
         explanation="Mocked CLIP consistency signal.",
         details={"cosine_similarity": 0.29},
     )
+    mock_evidence_sig = SignalResult(
+        name="claim_evidence",
+        score=0.10,
+        confidence=0.90,
+        explanation="Mocked claim evidence signal.",
+        details={"claim": "Protest in downtown Seattle on Sunday morning.", "web_verdict": "supported", "sources": []},
+    )
 
     with patch("backend.main.analyze_ai_generation", return_value=mock_ai_signal), \
-         patch("backend.main.analyze_clip_consistency", return_value=mock_clip_signal):
+         patch("backend.main.analyze_clip_consistency", return_value=mock_clip_signal), \
+         patch("backend.main.extract_claim", return_value="Protest in downtown Seattle on Sunday morning."), \
+         patch("backend.main.evidence_signal", return_value=mock_evidence_sig):
         yield
 
 
 def test_health_endpoint(client):
-    """GET /health returns healthy status and Phase 1 & 2 modules."""
+    """GET /health returns healthy status and Phase 1, 2, & 3 modules."""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
     assert data["version"] == "1.0.0"
-    for expected_mod in ["metadata", "ela", "ai_detector", "clip_consistency"]:
+    for expected_mod in ["metadata", "ela", "ai_detector", "clip_consistency", "claim_extractor", "claim_evidence"]:
         assert expected_mod in data["modules_loaded"]
 
 
@@ -48,7 +57,7 @@ def test_api_health_endpoint_alias(client):
 
 
 def test_analyze_with_jpeg(client):
-    """POST /analyze with JPEG and caption returns all 4 signals."""
+    """POST /analyze with JPEG and caption returns all 5 signals and extracted claim."""
     jpeg_bytes = make_jpeg_bytes()
     response = client.post(
         "/analyze",
@@ -60,13 +69,14 @@ def test_analyze_with_jpeg(client):
     data = response.json()
     assert data["filename"] == "protest.jpg"
     assert data["caption"] == "Protest in downtown Seattle on Sunday morning."
+    assert data["claim"] == "Protest in downtown Seattle on Sunday morning."
     assert "signals" in data
     assert isinstance(data["signals"], list)
-    assert len(data["signals"]) == 4
+    assert len(data["signals"]) == 5
 
     # Check signal modules
     signal_names = [s["name"] for s in data["signals"]]
-    for expected_name in ["metadata", "ela", "ai_detector", "clip_consistency"]:
+    for expected_name in ["metadata", "ela", "ai_detector", "clip_consistency", "claim_evidence"]:
         assert expected_name in signal_names
 
     # Check contract fields for each signal
@@ -89,7 +99,7 @@ def test_analyze_with_png(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["signals"]) == 4
+    assert len(data["signals"]) == 5
 
 
 def test_analyze_with_webp(client):
@@ -102,7 +112,34 @@ def test_analyze_with_webp(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["signals"]) == 4
+    assert len(data["signals"]) == 5
+
+
+def test_analyze_without_checkable_claim(client):
+    """POST /analyze with caption having no checkable claim returns confidence 0 for claim_evidence."""
+    no_claim_evidence_sig = SignalResult(
+        name="claim_evidence",
+        score=0.50,
+        confidence=0.0,
+        explanation="No checkable factual claim extracted from caption.",
+        details={"claim": None},
+    )
+
+    with patch("backend.main.extract_claim", return_value=None), \
+         patch("backend.main.evidence_signal", return_value=no_claim_evidence_sig):
+        jpeg_bytes = make_jpeg_bytes()
+        response = client.post(
+            "/analyze",
+            data={"caption": "Just a pretty sunset."},
+            files={"image": ("sunset.jpg", jpeg_bytes, "image/jpeg")},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["claim"] is None
+    evidence_signals = [s for s in data["signals"] if s["name"] == "claim_evidence"]
+    assert len(evidence_signals) == 1
+    assert evidence_signals[0]["confidence"] == 0.0
 
 
 def test_analyze_disallowed_extension(client):

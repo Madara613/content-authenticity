@@ -19,6 +19,12 @@ torch>=2.2.0
 torchvision>=0.17.0
 transformers>=4.39.0
 
+# Text Claim Extraction & Evidence Grounding (Phase 3)
+google-genai>=1.0.0
+sentence-transformers>=3.0.0
+faiss-cpu>=1.8.0
+
 # Development & Testing
 pytest>=8.1.0
 pytest-asyncio>=0.23.0
+

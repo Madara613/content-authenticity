@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     ai_detector_model_id: str = "umm-maybe/AI-image-detector"
     clip_model_id: str = "openai/clip-vit-base-patch32"
 
+    # Phase 3 Text & Evidence Models
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite"
+    liar_index_dir: Path = Path("data/liar")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

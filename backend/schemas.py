@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +27,7 @@ class SignalResult(BaseModel):
 class AnalyzeResponse(BaseModel):
     filename: str
     caption: str
+    claim: Optional[str] = None
     signals: List[SignalResult]
 
 

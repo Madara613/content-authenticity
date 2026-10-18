@@ -10,14 +10,16 @@ from PIL import Image
 
 from backend.config import settings
 from backend.modules.ai_detector import analyze_ai_generation
+from backend.modules.claim_extractor import extract_claim
 from backend.modules.clip_consistency import analyze_clip_consistency
 from backend.modules.ela import analyze_ela
+from backend.modules.evidence import evidence_signal
 from backend.modules.metadata import analyze_metadata
 from backend.schemas import AnalyzeResponse, HealthResponse, SignalResult
 
 app = FastAPI(
     title="Multimodal Content Authenticity API",
-    description="Backend API for verifying image and claim authenticity (Phase 1 & Phase 2).",
+    description="Backend API for verifying image and claim authenticity (Phase 1, Phase 2, & Phase 3).",
     version="1.0.0",
 )
 
@@ -48,11 +50,18 @@ app.mount(
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 @app.get("/api/health", response_model=HealthResponse, include_in_schema=False)
 async def health_check() -> HealthResponse:
-    """Return system readiness probe and loaded Phase 1 & 2 modules."""
+    """Return system readiness probe and loaded Phase 1, 2, & 3 modules."""
     return HealthResponse(
         status="healthy",
         version="1.0.0",
-        modules_loaded=["metadata", "ela", "ai_detector", "clip_consistency"],
+        modules_loaded=[
+            "metadata",
+            "ela",
+            "ai_detector",
+            "clip_consistency",
+            "claim_extractor",
+            "claim_evidence",
+        ],
     )
 
 
@@ -151,10 +160,34 @@ async def analyze_endpoint(
     # Module 4: Cross-Modal CLIP Consistency (Lazy loaded on CPU)
     clip_signal: SignalResult = analyze_clip_consistency(image_bytes, caption=caption)
 
-    signals: List[SignalResult] = [metadata_signal, ela_signal, ai_signal, clip_signal]
+    # Module 5 & 6: Claim Extraction & Grounded Evidence Verification (Phase 3)
+    try:
+        extracted_claim: Optional[str] = extract_claim(caption)
+    except Exception as exc:
+        extracted_claim = None
+
+    try:
+        claim_evidence_signal: SignalResult = evidence_signal(extracted_claim)
+    except Exception as exc:
+        claim_evidence_signal = SignalResult(
+            name="claim_evidence",
+            score=0.50,
+            confidence=0.0,
+            explanation=f"Evidence verification failed: {str(exc)}",
+            details={"claim": extracted_claim},
+        )
+
+    signals: List[SignalResult] = [
+        metadata_signal,
+        ela_signal,
+        ai_signal,
+        clip_signal,
+        claim_evidence_signal,
+    ]
 
     return AnalyzeResponse(
         filename=filename,
         caption=caption,
+        claim=extracted_claim,
         signals=signals,
     )
