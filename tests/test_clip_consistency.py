@@ -34,8 +34,8 @@ def _build_mock_clip(cosine_target: float):
     txt_y = (max(0.0, 1.0 - cosine_target ** 2)) ** 0.5
     txt_feat = torch.tensor([[cosine_target, txt_y]])
 
-    mock_model.get_image_features.return_value = img_feat
-    mock_model.get_text_features.return_value = txt_feat
+    mock_outputs = MagicMock(image_embeds=img_feat, text_embeds=txt_feat)
+    mock_model.return_value = mock_outputs
     return mock_model, mock_processor
 
 
@@ -106,9 +106,8 @@ def test_clip_consistency_model_load_failure_returns_confidence_zero():
 
 def test_clip_consistency_inference_failure_returns_confidence_zero():
     """If inference raises an exception, return confidence 0 instead of crashing."""
-    mock_model = MagicMock()
+    mock_model = MagicMock(side_effect=RuntimeError("Forward pass tensor error"))
     mock_processor = MagicMock()
-    mock_model.get_image_features.side_effect = RuntimeError("Token index out of range")
 
     with patch("backend.modules.clip_consistency.get_clip_components", return_value=(mock_model, mock_processor)):
         jpeg_bytes = make_jpeg_bytes()

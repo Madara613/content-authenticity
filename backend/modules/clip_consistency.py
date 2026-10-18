@@ -71,7 +71,21 @@ def analyze_clip_consistency(
     target_model_id = model_id or settings.clip_model_id
     cleaned_caption = caption.strip() if caption else ""
 
-    # 1. Lazily load model components with fail-safe error handling
+    # 1. Check for empty caption edge case before loading heavy model
+    if not cleaned_caption:
+        return SignalResult(
+            name="clip_consistency",
+            score=0.50,
+            confidence=0.30,
+            explanation="Empty caption provided; cross-modal semantic alignment cannot be computed.",
+            details={
+                "cosine_similarity": 0.0,
+                "caption": "",
+                "model_id": target_model_id,
+            },
+        )
+
+    # 2. Lazily load model components with fail-safe error handling
     try:
         model, processor = get_clip_components(target_model_id)
     except Exception as exc:
@@ -88,20 +102,6 @@ def analyze_clip_consistency(
             },
         )
 
-    # 2. Check for empty caption edge case
-    if not cleaned_caption:
-        return SignalResult(
-            name="clip_consistency",
-            score=0.50,
-            confidence=0.30,
-            explanation="Empty caption provided; cross-modal semantic alignment cannot be computed.",
-            details={
-                "cosine_similarity": 0.0,
-                "caption": "",
-                "model_id": target_model_id,
-            },
-        )
-
     # 3. Run inference on CPU
     try:
         with Image.open(io.BytesIO(image_bytes)) as pil_img:
@@ -112,21 +112,20 @@ def analyze_clip_consistency(
             images=image_rgb,
             return_tensors="pt",
             padding=True,
+            truncation=True,
         )
         inputs = {k: v.to(torch.device("cpu")) for k, v in inputs.items()}
 
         with torch.no_grad():
-            image_features = model.get_image_features(pixel_values=inputs["pixel_values"])
-            text_features = model.get_text_features(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs.get("attention_mask"),
-            )
+            outputs = model(**inputs)
+            image_embeds = outputs.image_embeds
+            text_embeds = outputs.text_embeds
 
-            # Normalize to unit hypersphere
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            # L2-normalize both explicitly
+            image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
+            text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
 
-            cosine_sim = float((image_features @ text_features.T).squeeze().item())
+            cosine_sim = float((image_embeds @ text_embeds.T).squeeze().item())
 
         # Calibration: low similarity means high suspicion
         # In CLIP, random image/text pairs are around 0.10-0.15; strong matches are >= 0.28.
